@@ -1,5 +1,5 @@
 // The TypeAI API serves every tool; the chain details are for the signing page and links
-const DEFAULT_API_URL = "https://api.typeai.live/api/mcp/v1";
+const DEFAULT_API_URL = "https://api.typeai.online/api/mcp/v1";
 
 const API_URL = (process.env.TYPEAI_API_URL || DEFAULT_API_URL).replace(/\/+$/, "");
 
