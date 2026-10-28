@@ -1,0 +1,38 @@
+{
+  "name": "typeai-mcp",
+  "version": "0.1.0",
+  "description": "TypeAI MCP server: research, rug-pull check and buy Robinhood Chain tokens from Claude, signed in your own wallet",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "robinhood-chain",
+    "crypto",
+    "defi",
+    "swap",
+    "typeai",
+    "rug-pull"
+  ],
+  "homepage": "https://typeai.online",
+  "license": "MIT",
+  "author": "TypeAI",
+  "main": "src/index.js",
+  "bin": {
+    "typeai-mcp": "src/index.js"
+  },
+  "files": [
+    "src",
+    "public"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.6.7"
+  }
+}
