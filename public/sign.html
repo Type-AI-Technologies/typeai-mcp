@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TypeAI · Approve swap</title>
+  <link rel="icon" href="/typeai.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0e0e0e;
+      --card: #171717;
+      --raised: #202020;
+      --line: rgba(255, 255, 255, 0.08);
+      --text: #ffffff;
+      --muted: #8a8a8a;
+      --primary: #ffc100;
+      --green: #34d399;
+      --red: #f87171;
+      --amber: #fbbf24;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Nunito, system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .card {
+      width: 100%;
+      min-width: 0;
+      max-width: 440px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 24px;
+    }
+    header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+    header img { width: 28px; height: 28px; }
+    header .brand { font-weight: 800; letter-spacing: 0.06em; }
+    header .chain {
+      margin-left: auto; font-size: 12px; font-weight: 700; color: var(--primary);
+      background: rgba(255, 193, 0, 0.1); border: 1px solid rgba(255, 193, 0, 0.3);
+      padding: 4px 10px; border-radius: 999px;
+    }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+    .swap { background: var(--raised); border-radius: 18px; padding: 4px 16px; margin-bottom: 16px; }
+    .leg { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; }
+    .leg + .leg { border-top: 1px solid var(--line); }
+    .leg .label { color: var(--muted); font-size: 13px; }
+    .leg .amount { font-size: 20px; font-weight: 800; text-align: right; overflow-wrap: anywhere; }
+    .leg > div { min-width: 0; }
+    .leg .usd { color: var(--muted); font-size: 12px; text-align: right; }
+    .rows { font-size: 14px; margin-bottom: 16px; }
+    .row { display: flex; justify-content: space-between; padding: 6px 2px; color: var(--muted); }
+    .row span:last-child { color: var(--text); font-weight: 700; text-align: right; }
+    .warn {
+      background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.3);
+      color: var(--amber); border-radius: 14px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px;
+    }
+    .warn ul { margin: 4px 0 0; padding-left: 18px; }
+    .safe { color: var(--green); font-size: 13px; margin-bottom: 16px; }
+    button {
+      width: 100%; height: 52px; border: 0; border-radius: 15px; cursor: pointer;
+      background: var(--primary); color: #262626; font: 800 15px Nunito, sans-serif;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .status { margin-top: 14px; font-size: 14px; color: var(--muted); text-align: center; min-height: 20px; }
+    .status.error { color: var(--red); }
+    .status.ok { color: var(--green); }
+    a { color: var(--primary); }
+    .done { text-align: center; padding: 8px 0; }
+    .done .big { font-size: 44px; }
+    .wallet { font-size: 12px; color: var(--muted); text-align: center; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <header>
+      <img src="/typeai.png" alt="" />
+      <span class="brand">TYPE AI</span>
+      <span class="chain" id="chain">Robinhood Chain</span>
+    </header>
+
+    <div id="content"><p class="sub">Loading swap…</p></div>
+    <div class="status" id="status"></div>
+    <div class="wallet" id="wallet"></div>
+  </main>
+
+  <script>
+    const requestId = location.pathname.split("/").filter(Boolean)[1];
+    const api = (path = "", options) =>
+      fetch(`/api/${requestId}${path}`, {
+        ...options,
+        headers: { "Content-Type": "application/json" },
+      }).then(async (res) => {
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || "Request failed");
+        return body;
+      });
+
+    const $ = (id) => document.getElementById(id);
+    const setStatus = (text, kind = "") => {
+      $("status").textContent = text;
+      $("status").className = `status ${kind}`;
+    };
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+    let request, wallet, built, builtAt = 0;
+
+    const warningsHtml = (warnings) =>
+      warnings?.length
+        ? `<div class="warn">⚠️ Safety check<ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></div>`
+        : `<div class="safe">✓ Safety check passed: no honeypot, blacklist or tax found</div>`;
+
+    const render = (view) => {
+      const d = built?.display;
+      const receive = d?.receive ?? request.estimate.receive;
+      const receiveUsd = d?.receiveUsd ?? request.estimate.receiveUsd;
+      $("content").innerHTML = `
+        <h1>Approve swap</h1>
+        <p class="sub">Requested by Claude via TypeAI. Nothing moves until you confirm in your wallet.</p>
+        <div class="swap">
+          <div class="leg"><span class="label">You pay</span><div><div class="amount">${esc(request.pay)}</div></div></div>
+          <div class="leg"><span class="label">You receive ${d ? "" : "(estimate)"}</span>
+            <div><div class="amount">~${esc(receive)}</div><div class="usd">≈ $${esc(receiveUsd)}</div></div></div>
+        </div>
+        <div class="rows">
+          ${d ? `<div class="row"><span>Minimum received</span><span>${esc(d.minimumReceive)}</span></div>` : ""}
+          <div class="row"><span>Slippage</span><span>${esc(d?.slippagePercent ?? request.slippagePercent)}%</span></div>
+          <div class="row"><span>Network fee</span><span>~$${esc(d?.gasUsd ?? request.estimate.gasUsd)}</span></div>
+          ${d ? `<div class="row"><span>TypeAI fee</span><span>${esc(d.typeAiFee)}</span></div>` : ""}
+          <div class="row"><span>Token</span><span>${esc(request.token.name)} · ${esc(request.token.address.slice(0, 6))}…${esc(request.token.address.slice(-4))}</span></div>
+        </div>
+        ${warningsHtml(request.safety.warnings)}
+        ${view}`;
+    };
+
+    const ROBINHOOD = () => request.chain;
+    const hexChain = () => "0x" + ROBINHOOD().id.toString(16);
+
+    const ensureChain = async () => {
+      const current = await ethereum.request({ method: "eth_chainId" });
+      if (parseInt(current, 16) === ROBINHOOD().id) return;
+      setStatus("Switch your wallet to Robinhood Chain…");
+      try {
+        await ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexChain() }] });
+      } catch (error) {
+        if (error.code !== 4902) throw error;
+        await ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: hexChain(),
+            chainName: ROBINHOOD().name,
+            nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+            rpcUrls: [ROBINHOOD().rpcUrl],
+            blockExplorerUrls: [ROBINHOOD().explorerUrl],
+          }],
+        });
+      }
+    };
+
+    const buildTx = async () => {
+      setStatus("Getting a fresh quote for your wallet…");
+      built = await api("/build", { method: "POST", body: JSON.stringify({ wallet }) });
+      builtAt = Date.now();
+      render(`<button id="sign">Swap ${esc(request.pay)} → ${esc(request.token.symbol)}</button>`);
+      $("sign").onclick = sign;
+      setStatus("Review the details, then confirm in your wallet.");
+    };
+
+    const connect = async () => {
+      if (!window.ethereum) {
+        setStatus("No wallet found. Install MetaMask and reload this page.", "error");
+        return;
+      }
+      try {
+        $("connect").disabled = true;
+        setStatus("Connect your wallet…");
+        [wallet] = await ethereum.request({ method: "eth_requestAccounts" });
+        $("wallet").textContent = `Wallet ${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
+        await ensureChain();
+        await buildTx();
+      } catch (error) {
+        setStatus(error.message || "Couldn't connect", "error");
+        render(`<button id="connect">Try again</button>`);
+        $("connect").onclick = connect;
+      }
+    };
+
+    const sign = async () => {
+      try {
+        $("sign").disabled = true;
+        await ensureChain();
+        if (Date.now() - builtAt > 30_000) await buildTx(); // quotes go stale quickly
+        $("sign") && ($("sign").disabled = true);
+        setStatus("Confirm the swap in your wallet…");
+        const txHash = await ethereum.request({ method: "eth_sendTransaction", params: [built.tx] });
+        await api("/submitted", { method: "POST", body: JSON.stringify({ txHash }) });
+        waitForConfirmation(txHash);
+      } catch (error) {
+        const rejected = error.code === 4001;
+        setStatus(rejected ? "You rejected the transaction. Nothing was sent." : error.message, "error");
+        render(`<button id="sign">Try again</button>`);
+        $("sign").onclick = async () => { await buildTx(); };
+      }
+    };
+
+    const waitForConfirmation = async (txHash) => {
+      const link = `${ROBINHOOD().explorerUrl}/tx/${txHash}`;
+      $("content").innerHTML = `<div class="done"><div class="big">⏳</div><h1>Swap submitted</h1>
+        <p class="sub">Waiting for Robinhood Chain to confirm…<br/><a href="${esc(link)}" target="_blank" rel="noreferrer">View transaction</a></p></div>`;
+      setStatus("");
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const s = await api("/status").catch(() => null);
+        if (s?.status === "confirmed" || s?.status === "failed") {
+          const ok = s.status === "confirmed";
+          $("content").innerHTML = `<div class="done"><div class="big">${ok ? "✅" : "❌"}</div>
+            <h1>${ok ? "Swap confirmed" : "Swap failed"}</h1>
+            <p class="sub">${ok ? `You swapped ${esc(request.pay)} for ~${esc(built.display.receive)}.` : "The transaction reverted. Your ETH was not swapped (gas was spent)."}<br/>
+            <a href="${esc(link)}" target="_blank" rel="noreferrer">View on explorer</a></p>
+            <p class="sub">You can go back to Claude now.</p></div>`;
+          return;
+        }
+      }
+    };
+
+    (async () => {
+      try {
+        request = await api();
+        if (request.txHash) return waitForConfirmation(request.txHash);
+        render(`<button id="connect">Connect wallet</button>`);
+        $("connect").onclick = connect;
+        if (window.ethereum) {
+          ethereum.on?.("accountsChanged", ([next]) => {
+            if (wallet && next && next.toLowerCase() !== wallet.toLowerCase()) {
+              wallet = next;
+              $("wallet").textContent = `Wallet ${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
+              buildTx().catch((e) => setStatus(e.message, "error"));
+            }
+          });
+        }
+      } catch (error) {
+        $("content").innerHTML = `<h1>Swap not found</h1><p class="sub">${esc(error.message)}</p>`;
+      }
+    })();
+  </script>
+</body>
+</html>
